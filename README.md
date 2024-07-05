@@ -1,1 +1,1 @@
-Report of Osmium project is in the 'Latex Report' file
+Report of Osmium project is in the Latex Report folder
