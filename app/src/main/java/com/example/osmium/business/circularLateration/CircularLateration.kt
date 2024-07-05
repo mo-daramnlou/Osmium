@@ -1,42 +1,62 @@
-package com.example.osmium.business.circularLateration;
-import org.apache.commons.math3.linear.Array2DRowRealMatrix;
-import org.apache.commons.math3.linear.DecompositionSolver;
-import org.apache.commons.math3.linear.LUDecomposition;
-import org.apache.commons.math3.linear.RealMatrix;
-import org.apache.commons.math3.linear.RealVector;
-import org.apache.commons.math3.linear.ArrayRealVector;
+package com.example.osmium.business.circularLateration
 
-public class CircularLateration {
+import org.apache.commons.math3.fitting.leastsquares.LeastSquaresBuilder
+import org.apache.commons.math3.fitting.leastsquares.MultivariateJacobianFunction
+import org.apache.commons.math3.linear.Array2DRowRealMatrix
+import org.apache.commons.math3.linear.ArrayRealVector
+import org.apache.commons.math3.util.Pair
 
-    public static double[] lateration(double[][] positions, double[] distances) {
-        int numPoints = positions.length;
+fun main() {
 
-        if (numPoints < 3) throw new IllegalArgumentException("At least three reference points are required");
+    val positions =
+        arrayOf(
+            doubleArrayOf(35.75195, 51.53178),
+            doubleArrayOf(35.73276, 51.51766),
+            doubleArrayOf(35.73753, 51.48329),
+            doubleArrayOf(35.758746, 51.484891)
+        )
 
-        double[][] A = new double[numPoints-1][2];
-        double[] B = new double[numPoints-1];
+    val distances = doubleArrayOf(
+        1.0,
+        1.0,
+        1.0,
+        1.0
+    )
 
-        for (int i = 0; i < numPoints - 1; i++) {
-            A[i][0] = 2 * (positions[i+1][0] - positions[0][0]);
-            A[i][1] = 2 * (positions[i+1][1] - positions[0][1]);
-            B[i] = distances[0] * distances[0] - distances[i+1] * distances[i+1]
-                    - positions[0][0] * positions[0][0] + positions[i+1][0] * positions[i+1][0]
-                    - positions[0][1] * positions[0][1] + positions[i+1][1] * positions[i+1][1];
+    val estimatedPosition = estimatePosition(positions, distances)
+    println("Estimated Position: x = ${estimatedPosition[0]}, y = ${estimatedPosition[1]}")
+}
+
+fun estimatePosition(positions: Array<DoubleArray>, distances: DoubleArray): DoubleArray {
+    val n = positions.size
+
+    val model = MultivariateJacobianFunction { point ->
+        val values = DoubleArray(n)
+        val jacobian = Array(n) { DoubleArray(2) }
+
+        for (i in positions.indices) {
+            val dx = point.toArray()[0] - positions[i][0]
+            val dy = point.toArray()[1] - positions[i][1]
+            values[i] = dx * dx + dy * dy - distances[i] * distances[i]
+            jacobian[i][0] = 2 * dx
+            jacobian[i][1] = 2 * dy
         }
 
-        RealMatrix matrixA = new Array2DRowRealMatrix(A);
-        RealVector vectorB = new ArrayRealVector(B);
-        DecompositionSolver solver = new LUDecomposition(matrixA).getSolver();
-        RealVector solution = solver.solve(vectorB);
-
-        return solution.toArray();
+        Pair(ArrayRealVector(values), Array2DRowRealMatrix(jacobian))
     }
 
-    public static void main(String[] args) {
-        double[][] positions = {{0, 0}, {100, 0}, {50, 100}};
-        double[] distances = {70, 70, 70};
+    val target = ArrayRealVector(n)
 
-        double[] result = lateration(positions, distances);
-        System.out.println("Estimated position: x = " + result[0] + ", y = " + result[1]);
-    }
+    val problem = LeastSquaresBuilder()
+        .start(doubleArrayOf(0.0, 0.0))
+        .model(model)
+        .target(target)
+        .lazyEvaluation(false)
+        .maxEvaluations(1000)
+        .maxIterations(1000)
+        .build()
+
+    val optimum = org.apache.commons.math3.fitting.leastsquares.LevenbergMarquardtOptimizer()
+        .optimize(problem)
+    return optimum.point.toArray()
 }
