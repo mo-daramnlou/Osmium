@@ -26,7 +26,10 @@ data class ReceivedSignalEntity(
     val distance:Double,
 
     @ColumnInfo(name = RSSI_COLUMN)
-    val rssi:Int
+    val rssi:Int,
+
+    @ColumnInfo(name = TIME_MILLIS_COLUMN)
+    val timeMillis:Long
     ){
     companion object{
         const val TABLE_NAME="received_signal"
@@ -36,6 +39,7 @@ data class ReceivedSignalEntity(
         const val CELL_ID_COLUMN="cell_id"
         const val DISTANCE_COLUMN="distance"
         const val RSSI_COLUMN="rssi"
+        const val TIME_MILLIS_COLUMN="time_millis"
 
     }
 }

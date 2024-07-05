@@ -44,6 +44,10 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
         calculateCellPositions()
     }
 
+    fun updateUIState(update: (MainActivityUIState) -> MainActivityUIState) {
+        _uiState.update { update(it) }
+    }
+
     fun getDeviceCurrentLocation(activity: MainActivity) {
         val fusedLocationClient = LocationServices.getFusedLocationProviderClient(activity)
         if (ActivityCompat.checkSelfPermission(
@@ -54,13 +58,6 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
             return
         }
         fusedLocationClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
@@ -85,17 +82,20 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
                 activity.getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager?
                     ?: return@launch
 
-            if (arePermissionsGranted(activity)) {
-                while (true) {
+            while (true) {
+                if (arePermissionsGranted(activity)) {
+
                     val receivedSignalEntities = mutableListOf<ReceivedSignalEntity>()
 
                     val deviceX = uiState.value.deviceLocation?.first
                     val deviceY = uiState.value.deviceLocation?.second
 
-                    if (deviceX!= null && deviceY!= null) {
+                    if (deviceX != null && deviceY != null) {
                         val cellInfoList = telephonyManager.allCellInfo
                         for (cellInfo in cellInfoList) {
                             if (cellInfo is CellInfoLte) {
+                                if (cellInfo.cellIdentity.ci == 0) continue
+
                                 val rssi = cellInfo.cellSignalStrength.rssi
                                 if (rssi == CellInfo.UNAVAILABLE) continue
 
@@ -108,7 +108,8 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
                                         deviceX = deviceX,
                                         deviceY = deviceY,
                                         distance = distance,
-                                        rssi = cellInfo.cellSignalStrength.rssi
+                                        rssi = cellInfo.cellSignalStrength.rssi,
+                                        timeMillis = System.currentTimeMillis()
                                     )
                                 )
                             }
@@ -116,11 +117,12 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
                         mainRepository.insertReceivedSignals(receivedSignalEntities)
                     }
 
-                    delay(5000)
+                } else {
+                    _uiState.update { state ->
+                        state.copy(permissionNotGrantedToast = true)
+                    }
                 }
-
-            } else {
-                Log.d("modar", "permission not granted!")
+                delay(10000)
             }
         }
     }
@@ -161,37 +163,48 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    private fun calculateCellPositions(){
+    private fun calculateCellPositions() {
         viewModelScope.launch(Dispatchers.IO) {
             mainRepository.getAllReceivedSignals()
                 .mapLatest { receivedSignalEntities ->
                     receivedSignalEntities.groupBy { it.cellID }.map {
-                        if (it.value.size<3) return@map null
+                        if (it.value.size < 3) return@map null
 
-                        val positions = Array(it.value.size) { DoubleArray(2)}
-                        for(i:Int in positions.indices) {
-                            positions[i][0]=it.value[i].deviceX
-                            positions[i][1]=it.value[i].deviceY
+                        val positions = Array(it.value.size) { DoubleArray(2) }
+                        for (i: Int in positions.indices) {
+                            positions[i][0] = it.value[i].deviceX
+                            positions[i][1] = it.value[i].deviceY
                         }
+
+                        positions.forEach { it.forEach { it2 -> Log.d("modar","$it2") } }
 
                         val distances = DoubleArray(it.value.size)
-                        for(i:Int in distances.indices) {
-                            distances[i]=it.value[i].distance
+                        for (i: Int in distances.indices) {
+                            distances[i] = it.value[i].distance
                         }
 
-                        Log.d("modar","positions: ${positions.size}")
-                        Log.d("modar","distances: ${distances.size}")
-                        val cellPosition= estimatePosition(positions.sliceArray(IntRange(0,2)), distances.sliceArray(IntRange(0,2)))
+                        distances.forEach { Log.d("modar","$it") }
+
+                        var cellPosition: DoubleArray
+                        try {
+                            cellPosition = estimatePosition(positions, distances)
+                        } catch (e: Exception) {
+                            Log.d(TAG, "error: ${e.message}")
+                            cellPosition = estimatePosition(
+                                positions.sliceArray(IntRange(0, 2)),
+                                distances.sliceArray(IntRange(0, 2))
+                            )
+                        }
 
                         PositionedCellEntity(
-                            cellID=it.key,
-                            cellX =cellPosition[0],
+                            cellID = it.key,
+                            cellX = cellPosition[0],
                             cellY = cellPosition[1]
                         )
                     }
                 }
                 .collectLatest { positionedCellEntities ->
-                   mainRepository.replaceAllPositionedCells(positionedCellEntities.filterNotNull())
+                    mainRepository.replaceAllPositionedCells(positionedCellEntities.filterNotNull())
                 }
         }
     }
@@ -209,9 +222,6 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
         }
     }
 
-    fun convertDate(dateInMilliseconds: String): String {
-        return DateFormat.format("dd/MM/yyyy hh:mm:ss", dateInMilliseconds.toLong()).toString()
-    }
 
     companion object {
         const val TAG = "MainViewModel"
@@ -221,5 +231,6 @@ class MainViewModel(private val mainRepository: MainRepository) : ViewModel() {
 data class MainActivityUIState(
     val deviceLocation: Pair<Double, Double>? = null,
     val positionedCells: List<PositionedCellUI> = emptyList(),
-    val receivedSignals: List<ReceivedSignalUI> = emptyList()
+    val receivedSignals: List<ReceivedSignalUI> = emptyList(),
+    val permissionNotGrantedToast: Boolean = false
 )

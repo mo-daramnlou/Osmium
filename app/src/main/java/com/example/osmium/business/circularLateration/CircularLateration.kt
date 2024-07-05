@@ -10,17 +10,15 @@ fun main() {
 
     val positions =
         arrayOf(
-            doubleArrayOf(35.75195, 51.53178),
-            doubleArrayOf(35.73276, 51.51766),
-            doubleArrayOf(35.73753, 51.48329),
-            doubleArrayOf(35.758746, 51.484891)
+            doubleArrayOf(35.0326033, 50.3635483),
+            doubleArrayOf(35.0326033, 50.3635483),
+            doubleArrayOf(35.0326033, 50.3635483)
         )
 
     val distances = doubleArrayOf(
-        1.0,
-        1.0,
-        1.0,
-        1.0
+        1883.6490894898002,
+        1883.6490894898002,
+        1883.6490894898002
     )
 
     val estimatedPosition = estimatePosition(positions, distances)
